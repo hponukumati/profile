@@ -344,7 +344,7 @@
 
         #map-tooltip {
             position: fixed;
-            pointer-events: none;
+            pointer-events: auto;
             background: rgba(20, 20, 20, 0.9);
             color: #fff;
             padding: 10px 12px;
@@ -378,6 +378,17 @@
         #map-tooltip .tt-chip {
             display: block;
             margin-top: 2px;
+        }
+        #map-tooltip .tt-link {
+            display: inline-block;
+            margin-top: 8px;
+            color: #bfdbfe;
+            font-weight: 700;
+            text-decoration: none;
+        }
+        #map-tooltip .tt-link:hover {
+            color: #dbeafe;
+            text-decoration: underline;
         }
         @media (max-width: 960px) {
             .industry-bar {
@@ -581,6 +592,9 @@ const BALANCE_NEGATIVE_DARK = "#c96256";
 const BALANCE_NEGATIVE_LIGHT = "#f3c6bf";
 const BALANCE_POSITIVE_DARK = "#0f6b57";
 const BALANCE_POSITIVE_LIGHT = "#bfe3d1";
+const REGION_START_COLOR = "#f97316";
+const REGION_END_COLOR = "#2563eb";
+const REGION_NEUTRAL_COLOR = "#1e293b";
 const ALL_INDUSTRY_VALUE = "ALL";
 const STANDARD_ARROW_HEAD_PATH = "M0,-4.4L13,0L0,4.4Z";
 const INDUSTRY_IMPORT_ARROW_HEAD_PATH = "M0,-3.9L12.2,0L0,3.9Z";
@@ -636,6 +650,7 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 }).addTo(map);
 
 L.svg().addTo(map);
+const tradeRegionHighlightLayer = L.layerGroup().addTo(map);
 const svg = d3.select("#map").select("svg");
 const g   = svg.append("g");
 
@@ -720,6 +735,8 @@ let currentIndustryMode = "all";
 let currentIndustryCode = ALL_INDUSTRY_VALUE;
 let currentIndustryFlowDir = "both";
 let selectedArrow = null;
+let selectedTrade = null;
+let activeTooltipTrade = null;
 const NORMAL_OPACITY    = 0.65;
 const HIGHLIGHT_OPACITY = 1.0;
 const DIM_OPACITY       = 0.08;
@@ -741,6 +758,21 @@ const INDUSTRY_DIRECTION_OPTIONS = [
 // Tooltip
 // ---------------------------------------------------------------------------
 const tooltip = document.getElementById("map-tooltip");
+
+tooltip.addEventListener("mouseenter", function() {
+    if (activeTooltipTrade) {
+        applyHighlight(activeTooltipTrade.partner, { scroll: false, trade: activeTooltipTrade });
+    }
+});
+
+tooltip.addEventListener("mouseleave", function(evt) {
+    const relatedTarget = evt.relatedTarget;
+    if (relatedTarget instanceof Element && relatedTarget.closest("path.arrow, path.arrow-hit")) {
+        return;
+    }
+    hideTooltip();
+    selectedArrow ? applyHighlight(selectedArrow, { scroll: false, trade: selectedTrade }) : clearHighlight();
+});
 
 function industryLabel(code) {
     const key = normalizeCode(TradeShared.getState().year);
@@ -983,8 +1015,123 @@ function syncIndustryFlowDirToHash(flowDir) {
     }
 }
 
+function sankeyFactorForMetric(metricKey) {
+    return ({
+        CO2_total: "co2",
+        Water_total: "water",
+        Employment_total: "emp",
+        amount: "amt",
+    })[metricKey] || metricKey;
+}
+
+function getSankeySelectionForTrade(trade) {
+    const focusCountry = currentFocusCountry;
+    const partner = normalizeCode(trade && trade.partner);
+    if (!focusCountry || !partner) return null;
+
+    let flow = currentFlowDir;
+    if (trade && trade.viewMode === "industry" && trade.flowDir) {
+        flow = trade.flowDir;
+    } else if (currentFlowDir === "balance") {
+        flow = normalizeCode(trade && trade.from) === normalizeCode(focusCountry) ? "exports" : "imports";
+    }
+
+    if (flow !== "imports" && flow !== "exports") {
+        return null;
+    }
+
+    return {
+        country: focusCountry,
+        otherCountry: partner,
+        flow,
+    };
+}
+
+function buildSankeyLink(trade) {
+    const selection = getSankeySelectionForTrade(trade);
+    if (!selection) return "";
+
+    const state = TradeShared.getState();
+    const url = new URL("../../charts/sankey/index.html", window.location.href);
+    const hashParts = [
+        `country=${encodeURIComponent(selection.country)}`,
+        `othercountry=${encodeURIComponent(selection.otherCountry)}`,
+        `year=${encodeURIComponent(state.year || "2022")}`,
+        `flow=${encodeURIComponent(selection.flow)}`,
+        `factor=${encodeURIComponent(sankeyFactorForMetric(state.metric || "amount"))}`,
+        `currency=${encodeURIComponent(state.currency || "EUR")}`,
+        `inflows=${encodeURIComponent(String(state.topn || 15))}`,
+    ];
+    url.hash = hashParts.join("&");
+    return url.href;
+}
+
+function buildGenericHighlightTrade(partnerCode) {
+    const partner = normalizeCode(partnerCode);
+    if (!partner || !COORDS[partner] || !COORDS[currentFocusCountry]) return null;
+
+    if (currentIndustryMode === "industry") {
+        if (currentIndustryFlowDir === "imports") {
+            return { from: partner, to: currentFocusCountry, neutralHighlight: false };
+        }
+        if (currentIndustryFlowDir === "exports") {
+            return { from: currentFocusCountry, to: partner, neutralHighlight: false };
+        }
+        return { from: currentFocusCountry, to: partner, neutralHighlight: true };
+    }
+
+    if (currentFlowDir === "imports") {
+        return { from: partner, to: currentFocusCountry, neutralHighlight: false };
+    }
+    if (currentFlowDir === "exports") {
+        return { from: currentFocusCountry, to: partner, neutralHighlight: false };
+    }
+    return { from: currentFocusCountry, to: partner, neutralHighlight: true };
+}
+
+function addRegionMarker(countryCode, color, radius, fillOpacity) {
+    const coords = COORDS[normalizeCode(countryCode)];
+    if (!coords) return;
+    const latLng = [coords[1], coords[0]];
+    L.circleMarker(latLng, {
+        radius,
+        color: "#ffffff",
+        weight: radius > 10 ? 2.4 : 1.6,
+        fillColor: color,
+        fillOpacity,
+        opacity: 0.95,
+        interactive: false,
+        bubblingMouseEvents: false,
+    }).addTo(tradeRegionHighlightLayer);
+}
+
+function highlightTradeRegions(trade) {
+    tradeRegionHighlightLayer.clearLayers();
+    if (!trade) return;
+
+    const fromCode = normalizeCode(trade.from);
+    const toCode = normalizeCode(trade.to);
+    if (!COORDS[fromCode] || !COORDS[toCode]) return;
+
+    const neutral = !!trade.neutralHighlight;
+    const fromColor = neutral ? REGION_NEUTRAL_COLOR : REGION_START_COLOR;
+    const toColor = neutral ? REGION_NEUTRAL_COLOR : REGION_END_COLOR;
+
+    addRegionMarker(fromCode, fromColor, 13, neutral ? 0.16 : 0.2);
+    addRegionMarker(fromCode, fromColor, 8, neutral ? 0.78 : 0.88);
+
+    if (toCode !== fromCode) {
+        addRegionMarker(toCode, toColor, 13, neutral ? 0.16 : 0.2);
+        addRegionMarker(toCode, toColor, 8, neutral ? 0.78 : 0.88);
+    }
+}
+
 function showTooltip(trade, focusCountry, flowDir, evt) {
     const label = `${countryLabel(trade.from)} \u2192 ${countryLabel(trade.to)}`;
+    const sankeyLink = buildSankeyLink(trade);
+    const sankeyLinkMarkup = sankeyLink
+        ? `<a class="tt-link" href="${escapeHtml(sankeyLink)}" target="_blank" rel="noopener noreferrer">Open Sankey chart</a>`
+        : "";
     if (trade.viewMode === "industry") {
         const tradeLabel = trade.flowDir === "imports" ? "Imports" : "Exports";
         tooltip.innerHTML =
@@ -992,7 +1139,8 @@ function showTooltip(trade, focusCountry, flowDir, evt) {
             `<div class="tt-co2">${tradeLabel}: ${fmtAmountValue(trade.amount || 0)}</div>` +
             `<div class="tt-muted">Industry: ${escapeHtml(trade.industryLabel || trade.dominantTypeLabel || "Mixed trade")}</div>` +
             `<div class="tt-muted">${escapeHtml(indicatorLabel())}: ${escapeHtml(fmtIndicator(trade.co2 || 0))}</div>` +
-            `<div class="tt-muted">Arrow style: ${escapeHtml(trade.typeFamilyLabel || "mixed trade")} family</div>`;
+            `<div class="tt-muted">Arrow style: ${escapeHtml(trade.typeFamilyLabel || "mixed trade")} family</div>` +
+            sankeyLinkMarkup;
     } else if (flowDir === "balance") {
         const balanceLabel = trade.netCo2 >= 0 ? "Trade surplus" : "Trade deficit";
         tooltip.innerHTML =
@@ -1004,7 +1152,8 @@ function showTooltip(trade, focusCountry, flowDir, evt) {
             `<div class="tt-subhead">Top export types</div>` +
             formatTypeChips(trade.exportTopTypes, "Exports") +
             `<div class="tt-subhead">Top import types</div>` +
-            formatTypeChips(trade.importTopTypes, "Imports");
+            formatTypeChips(trade.importTopTypes, "Imports") +
+            sankeyLinkMarkup;
     } else {
         const tradeLabel = flowDir === "imports" ? "Imports" : "Exports";
         tooltip.innerHTML =
@@ -1013,8 +1162,10 @@ function showTooltip(trade, focusCountry, flowDir, evt) {
             `<div class="tt-muted">Total Amount: ${fmtAmountValue(trade.amount || 0)}</div>` +
             `<div class="tt-muted">Dominant type: ${escapeHtml(trade.dominantTypeLabel || "Mixed trade")} (${escapeHtml(trade.typeFamilyLabel || "mixed trade")})</div>` +
             `<div class="tt-subhead">Top ${tradeLabel.toLowerCase()} types</div>` +
-            formatTypeChips(trade.topTypes, tradeLabel);
+            formatTypeChips(trade.topTypes, tradeLabel) +
+            sankeyLinkMarkup;
     }
+    activeTooltipTrade = trade;
     tooltip.style.display = "block";
     moveTooltip(evt);
 }
@@ -1039,6 +1190,7 @@ function moveTooltip(evt) {
 
 function hideTooltip() {
     tooltip.style.display = "none";
+    activeTooltipTrade = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1049,7 +1201,7 @@ function getFilterRow(partnerCode) {
 }
 
 function applyHighlight(partnerCode, options) {
-    const settings = Object.assign({ scroll: true }, options);
+    const settings = Object.assign({ scroll: true, trade: null }, options);
     g.selectAll("path.arrow")
         .classed("is-active", false)
         .style("opacity", DIM_OPACITY)
@@ -1064,6 +1216,8 @@ function applyHighlight(partnerCode, options) {
             .classed("is-active", true)
             .style("opacity", HIGHLIGHT_OPACITY);
     }
+
+    highlightTradeRegions(settings.trade || buildGenericHighlightTrade(partnerCode));
 
     document.querySelectorAll("#source-filters label").forEach(el => {
         const isMatch = el.dataset.partner === partnerCode;
@@ -1081,6 +1235,7 @@ function clearHighlight() {
         .style("stroke-width", function() {
             return `${parseFloat(this.getAttribute("data-base-sw")) || 2}px`;
         });
+    tradeRegionHighlightLayer.clearLayers();
     document.querySelectorAll("#source-filters label")
         .forEach(el => el.classList.remove("highlighted"));
     hideTooltip();
@@ -1574,16 +1729,20 @@ function renderArrows(trades, focusCountry, flowDir) {
         selection
             .on("mouseover", function(evt) {
                 map.getContainer().style.cursor = "pointer";
-                applyHighlight(trade.partner);
+                applyHighlight(trade.partner, { trade });
                 showTooltip(trade, focusCountry, flowDir, evt);
             })
             .on("mousemove", function(evt) {
                 moveTooltip(evt);
             })
-            .on("mouseout", function() {
+            .on("mouseout", function(evt) {
                 map.getContainer().style.cursor = "";
+                const relatedTarget = evt.relatedTarget;
+                if (relatedTarget instanceof Element && tooltip.contains(relatedTarget)) {
+                    return;
+                }
                 hideTooltip();
-                selectedArrow ? applyHighlight(selectedArrow) : clearHighlight();
+                selectedArrow ? applyHighlight(selectedArrow, { trade: selectedTrade }) : clearHighlight();
             })
             .on("click", function(evt) {
                 if (evt && typeof evt.stopPropagation === "function") {
@@ -1591,10 +1750,12 @@ function renderArrows(trades, focusCountry, flowDir) {
                 }
                 if (selectedArrow === trade.partner) {
                     selectedArrow = null;
+                    selectedTrade = null;
                     clearHighlight();
                 } else {
                     selectedArrow = trade.partner;
-                    applyHighlight(trade.partner);
+                    selectedTrade = trade;
+                    applyHighlight(trade.partner, { trade });
                 }
             });
     }
@@ -1775,7 +1936,7 @@ function buildCheckboxes(trades, focusCountry, flowDir) {
 
         label.addEventListener("mouseenter", () => applyHighlight(trade.partner, { scroll: false }));
         label.addEventListener("mouseleave", () => {
-            selectedArrow ? applyHighlight(selectedArrow) : clearHighlight();
+            selectedArrow ? applyHighlight(selectedArrow, { trade: selectedTrade }) : clearHighlight();
         });
 
         container.appendChild(label);
@@ -1879,7 +2040,9 @@ function loadFlows(focusCountry, flowDir) {
     const year = TradeShared.getState().year || "2022";
     currentFocusCountry = focusCountry;
     selectedArrow = null;
+    selectedTrade = null;
     hideTooltip();
+    tradeRegionHighlightLayer.clearLayers();
     g.selectAll("*").remove();
     svg.selectAll("defs").remove();
     document.getElementById("source-filters").innerHTML = "";
