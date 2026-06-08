@@ -126,6 +126,29 @@ document.write('<script src="' + window.SANKEY_LOCALSITE_BASE + '/js/trade.js"><
     min-width: 2em;
     text-align: right;
   }
+  #clear-filters-btn {
+    padding: 6px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #22314c;
+    background: #fff;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  }
+  #clear-filters-btn:hover {
+    background: #f1f5fb;
+    border-color: #94a3b8;
+  }
+  #clear-filters-btn:active {
+    background: #e2e8f0;
+  }
+  .dark #clear-filters-btn {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-color: #777;
+  }
   #sankey-status {
     font-size: 0.88em;
     font-style: italic;
@@ -231,6 +254,7 @@ document.write('<script src="' + window.SANKEY_LOCALSITE_BASE + '/js/trade.js"><
           <option value="verbose">Complete verbose name</option>
         </select>
       </label>
+      <button type="button" id="clear-filters-btn" title="Reset filters and clear stored selections">Clear</button>
     </div>
   </div>
 
@@ -1828,7 +1852,29 @@ scoreHelpClose.addEventListener("click", function() {
   scoreHelpButton.removeAttribute("hidden");
 });
 
+const FILTER_HASH_KEYS = ["country", "othercountry", "year", "flow", "factor", "currency", "labels", "inflows"];
+
+function hashHasFilterKey() {
+  const hash = typeof getHash === "function" ? getHash() : {};
+  return FILTER_HASH_KEYS.some(function (key) {
+    return Object.prototype.hasOwnProperty.call(hash, key) && hash[key];
+  });
+}
+
+function clearAllFilters() {
+  localStorage.removeItem("sankey-state");
+  if (typeof updateHash === "function") {
+    updateHash({}, true, FILTER_HASH_KEYS);
+  }
+  loadFromHash(true);
+}
+
+document.getElementById("clear-filters-btn").addEventListener("click", clearAllFilters);
+
 document.addEventListener("hashChangeEvent", function() {
+  if (!hashHasFilterKey()) {
+    localStorage.removeItem("sankey-state");
+  }
   const selection = resolveSelection(readHashState());
   const selectionKey = [
     selection.country,
