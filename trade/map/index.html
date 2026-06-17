@@ -563,83 +563,79 @@
     <div id="partner-chart-status"></div>
     <div id="partner-chart"></div>
   </div>
-  <div id="readmeDiv"></div>
-</div>
-
-<!-- ================================================================
-     Sankey Chart Section — integrated from io/charts/sankey/desktop/index.html
-     Shared trade controls (Year, Factor, Currency, Inflows) live in the
-     map's control panel above and drive both charts via trade:change events.
-     ================================================================ -->
-<div id="sankey-section" class="content contentpadding">
-  <h2>Exiobase Industry Trade Flow Sankey</h2>
-  <p>
-    Global industry-to-industry embodied environmental factors from our
-    <a href="https://model.earth/exiobase/tradeflow/">trade flow csv files</a>.
-    Use the Year / Factor / Currency / Inflows controls in the map panel above to filter both charts together.
-  </p>
-
-  <div style="background:#f5f7fa;border-radius:6px;padding:10px 14px;margin-bottom:10px;">
-    <div id="sankey-only-controls">
-      <label>
-        Country:
-        <select id="sankey-country-select"></select>
-      </label>
-      <label id="sankey-other-country-wrap" hidden>
-        <span id="sankey-other-country-label">From:</span>
-        <select id="sankey-other-country">
-          <option value="">All</option>
-        </select>
-      </label>
-      <label>
-        Flow:
-        <select id="sankey-flow-select"></select>
-      </label>
-      <label>
-        Industry labels:
-        <select id="sankey-industry-label-select">
-          <option value="title">Title</option>
-          <option value="short">Short name</option>
-          <option value="verbose">Complete verbose name</option>
-        </select>
-      </label>
-    </div>
-  </div>
-
-  <div id="sankey-status">Loading data&hellip;</div>
-  <div id="sankey-chart"></div>
-
-  <div id="sankey-partner-chart-panel" hidden>
-    <h3 id="sankey-partner-chart-header">Top Partner Countries</h3>
-    <p id="sankey-partner-chart-note">
-      Top 10 partner countries for the selected import/export view, showing the selected indicator alongside amount spent.
+  <!-- Sankey Chart Section — above README, wired to shared trade:change events -->
+  <div id="sankey-section" class="content contentpadding" style="padding-left:0;padding-right:0;">
+    <h2>Exiobase Industry Trade Flow Sankey</h2>
+    <p>
+      Global industry-to-industry embodied environmental factors from our
+      <a href="https://model.earth/exiobase/tradeflow/">trade flow csv files</a>.
+      Use the Year / Factor / Currency / Inflows controls in the map panel above to filter both charts together.
     </p>
-    <div id="sankey-partner-chart-status"></div>
-    <div id="sankey-partner-chart"></div>
-  </div>
 
-  <div id="sankey-about-wrap">
-    <button id="sankey-score-help-button" type="button">About Chart</button>
-    <div id="sankey-score-help-panel" hidden>
-      <button id="sankey-score-help-close" aria-label="Close">&times;</button>
-      <p id="sankey-attribution">
-        <strong>Data source:</strong>
-        <a href="https://model.earth/exiobase/tradeflow/">Trade flow data pull</a> from
-        <a href="https://exiobase.eu">EXIOBASE 3</a>
-        (multi-regional input-output database, 44 countries, 163 sectors)<br>
-        Industry labels from <code>trade-data/year/[year]/industry.csv</code><br>
-        Currency rates from <code>trade-data/concordance/eur_annual_rates.csv</code><br>
-        Trade-data CSV: <code id="sankey-csv-path-label">trade-data/year/.../trade_impact.csv</code>
-      </p>
-      <div>
-        <p><strong>How the partner-country score works:</strong> the score ranks import/export partner countries from best to worst on a 0 to 100 scale.</p>
-        <p><strong>Amount Spent:</strong> score = 100 x partner trade value / largest partner trade value.</p>
-        <p><strong>CO&#x2082; Emissions and Water Use:</strong> score = 100 x (0.6 x trade strength + 0.4 x lower impact per amount-spent efficiency).</p>
-        <p><strong>Employment:</strong> score = 100 x (0.6 x trade strength + 0.4 x higher jobs per amount-spent efficiency).</p>
+    <div style="background:#f5f7fa;border-radius:6px;padding:10px 14px;margin-bottom:10px;">
+      <div id="sankey-only-controls">
+        <label>
+          Country:
+          <select id="sankey-country-select"></select>
+        </label>
+        <label id="sankey-other-country-wrap" hidden>
+          <span id="sankey-other-country-label">From:</span>
+          <select id="sankey-other-country">
+            <option value="">All</option>
+          </select>
+        </label>
+        <label>
+          Flow:
+          <select id="sankey-flow-select"></select>
+        </label>
+        <label>
+          Industry labels:
+          <select id="sankey-industry-label-select">
+            <option value="title">Title</option>
+            <option value="short">Short name</option>
+            <option value="verbose">Complete verbose name</option>
+          </select>
+        </label>
       </div>
     </div>
-  </div>
-</div><!-- end #sankey-section -->
+
+    <div id="sankey-status">Loading data&hellip;</div>
+    <div id="sankey-chart"></div>
+
+    <div id="sankey-partner-chart-panel" hidden>
+      <h3 id="sankey-partner-chart-header">Top Partner Countries</h3>
+      <p id="sankey-partner-chart-note">
+        Top 10 partner countries for the selected import/export view, showing the selected indicator alongside amount spent.
+      </p>
+      <div id="sankey-partner-chart-status"></div>
+      <div id="sankey-partner-chart"></div>
+    </div>
+
+    <div id="sankey-about-wrap">
+      <button id="sankey-score-help-button" type="button">About Chart</button>
+      <div id="sankey-score-help-panel" hidden>
+        <button id="sankey-score-help-close" aria-label="Close">&times;</button>
+        <p id="sankey-attribution">
+          <strong>Data source:</strong>
+          <a href="https://model.earth/exiobase/tradeflow/">Trade flow data pull</a> from
+          <a href="https://exiobase.eu">EXIOBASE 3</a>
+          (multi-regional input-output database, 44 countries, 163 sectors)<br>
+          Industry labels from <code>trade-data/year/[year]/industry.csv</code><br>
+          Currency rates from <code>trade-data/concordance/eur_annual_rates.csv</code><br>
+          Trade-data CSV: <code id="sankey-csv-path-label">trade-data/year/.../trade_impact.csv</code>
+        </p>
+        <div>
+          <p><strong>How the partner-country score works:</strong> the score ranks import/export partner countries from best to worst on a 0 to 100 scale.</p>
+          <p><strong>Amount Spent:</strong> score = 100 x partner trade value / largest partner trade value.</p>
+          <p><strong>CO&#x2082; Emissions and Water Use:</strong> score = 100 x (0.6 x trade strength + 0.4 x lower impact per amount-spent efficiency).</p>
+          <p><strong>Employment:</strong> score = 100 x (0.6 x trade strength + 0.4 x higher jobs per amount-spent efficiency).</p>
+        </div>
+      </div>
+    </div>
+  </div><!-- end #sankey-section -->
+
+  <div id="readmeDiv"></div>
+</div>
 
 <script>
 // ---------------------------------------------------------------------------
@@ -2481,8 +2477,6 @@ let skLoadToken         = 0;
 let skActiveSelection   = null;
 const skIndustryNameByYear = {};
 
-TradePartner.initChart("sankey-partner-chart");
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -2850,7 +2844,6 @@ function skRender() {
     if(!links.length){
         skSetStatus("No data available for this combination.",true);
         skChart.clear();
-        TradePartner.render(skRawData,skActiveSelection);
         return;
     }
     skChart.setOption({
@@ -2873,16 +2866,6 @@ function skRender() {
     const pc=skActiveSelection.otherCountry?(skActiveSelection.flow==="exports"?" to ":" from ")+skActiveSelection.otherCountry:"";
     skSetStatus("Showing top "+links.length+" "+skActiveSelection.flow+" flows by "+metric.label+" for "+skActiveSelection.country+pc+" "+skActiveSelection.year,false);
 
-    // Pass a sanitised selection object that TradePartner.render understands
-    TradePartner.render(skRawData,{
-        country:skActiveSelection.country,
-        otherCountry:skActiveSelection.otherCountry||"",
-        year:skActiveSelection.year,
-        flow:skActiveSelection.flow,
-        metric:skActiveSelection.metric,
-        currency:skActiveSelection.currency,
-        topn:skActiveSelection.topn
-    });
 }
 
 // ---------------------------------------------------------------------------
@@ -2902,7 +2885,6 @@ async function skLoadSelection(sel) {
     skPendingDataKey="";
     if(!r||!r.text){
         skRawData=null;skRawDataKey="";skChart.clear();
-        TradePartner.render(null,sel);
         skSetStatus("Error loading data for "+selKey+".",true);
         return;
     }
