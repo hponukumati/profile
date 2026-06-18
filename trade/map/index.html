@@ -29,6 +29,15 @@
     </script>
     <script>
     window.addEventListener("load", function() {
+        // localsite.js sets theroot incorrectly when loaded from jsDelivr CDN
+        // (strips the /gh/ModelEarth/localsite@main path). Fix it using the
+        // base URL we already computed correctly in TRADE_MAP_LOCALSITE_BASE.
+        if (typeof theroot !== "undefined" &&
+            theroot.indexOf("cdn.jsdelivr.net") !== -1 &&
+            theroot.indexOf("/gh/") === -1 &&
+            window.TRADE_MAP_LOCALSITE_BASE) {
+            theroot = window.TRADE_MAP_LOCALSITE_BASE + "/";
+        }
         if (typeof loadMarkdown === "function") {
             loadMarkdown("README.md", "readmeDiv", "_parent");
         }
