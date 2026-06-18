@@ -20,9 +20,11 @@
   const tradeMapUrl = isLocalsiteProfileMirror
     ? (isFile ? "../../../../profile/trade/map/index.html" : "/profile/trade/map/index.html")
     : "../../trade/map/index.html";
+  const stateSankeyUrl = "state.html";
 
   window.SANKEY_LOCALSITE_BASE = localsiteBase;
   window.SANKEY_TRADE_MAP_URL = tradeMapUrl;
+  window.SANKEY_STATE_DASHBOARD_URL = stateSankeyUrl;
 
   document.write('<link type="text/css" rel="stylesheet" href="' + localsiteBase + '/css/base.css" />');
   document.write('<script type="text/javascript" src="' + localsiteBase + '/js/localsite.js?showheader=true&showsearch=true"><\/script>');
@@ -225,6 +227,7 @@ document.write('<script src="' + window.SANKEY_LOCALSITE_BASE + '/js/trade.js"><
       <h2>Exiobase Industry Trade Flow Sankey</h2>
       <p>
         Global industry-to-industry embodied environmental factors from our <a href="https://model.earth/exiobase/tradeflow/">trade flow csv files</a> are also used in our <a id="trade-map-link" href="../../trade/map/index.html">trade flow map</a>
+        and the <a id="state-sankey-link" href="state.html">US state trade Sankey</a>.
       </p>
     </div>
   </div>
@@ -330,6 +333,42 @@ const INDUSTRY_LABEL_MODES = {
 
 const FACTOR_TO_METRIC = { co2: "CO2_total", water: "Water_total", emp: "Employment_total", amt: "amount" };
 const METRIC_TO_FACTOR = { CO2_total: "co2", Water_total: "water", Employment_total: "emp", amount: "amt" };
+const FILTER_STORAGE_KEY = "sankey-state";
+const FILTER_HASH_KEYS = ["country", "othercountry", "year", "flow", "factor", "currency", "labels", "inflows"];
+
+function readFilterCache() {
+  try {
+    return JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) || "{}") || {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function writeFilterCache(cache) {
+  const entries = FILTER_HASH_KEYS.filter(function (key) {
+    return cache[key] !== "" && cache[key] !== null && cache[key] !== undefined;
+  });
+  if (!entries.length) {
+    localStorage.removeItem(FILTER_STORAGE_KEY);
+    return;
+  }
+  const trimmed = {};
+  entries.forEach(function (key) {
+    trimmed[key] = cache[key];
+  });
+  localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(trimmed));
+}
+
+function clearFilterCache() {
+  localStorage.removeItem(FILTER_STORAGE_KEY);
+}
+
+function hashHasFilterKey(hash) {
+  const candidate = hash || (typeof getHash === "function" ? getHash() : {});
+  return FILTER_HASH_KEYS.some(function (key) {
+    return Object.prototype.hasOwnProperty.call(candidate, key) && candidate[key];
+  });
+}
 
 const CURRENCY_NAMES = {
   EUR: "Euro",
@@ -467,7 +506,7 @@ const SECTOR_NAMES = {
 // ---------------------------------------------------------------------------
 (function() {
   const hash = typeof getHash === "function" ? getHash() : {};
-  const saved = JSON.parse(localStorage.getItem("sankey-state") || "{}");
+  const saved = hashHasFilterKey(hash) ? {} : readFilterCache();
   const initCountry = hash.country || saved.country || manifest.defaultSelection.country;
   const initYear = hash.year || saved.year || manifest.defaultSelection.year;
   TradeShared.init({
@@ -511,6 +550,10 @@ TradePartner.initChart("partner-chart");
 const tradeMapLink = document.getElementById("trade-map-link");
 if (tradeMapLink && window.SANKEY_TRADE_MAP_URL) {
   tradeMapLink.href = window.SANKEY_TRADE_MAP_URL;
+}
+const stateSankeyLink = document.getElementById("state-sankey-link");
+if (stateSankeyLink && window.SANKEY_STATE_DASHBOARD_URL) {
+  stateSankeyLink.href = window.SANKEY_STATE_DASHBOARD_URL;
 }
 
 function prioritizeAmountMetricOption() {
@@ -1174,13 +1217,13 @@ function supportedFlows(country, year) {
 
 function readHashState() {
   const hash = typeof getHash === "function" ? getHash() : {};
-  const saved = JSON.parse(localStorage.getItem("sankey-state") || "{}");
+  const saved = hashHasFilterKey(hash) ? {} : readFilterCache();
   const currentOtherCountry = activeSelection && activeSelection.otherCountry
     ? activeSelection.otherCountry
     : "";
   return {
     country:           hash.country  || saved.country  || manifest.defaultSelection.country,
-    otherCountry:      hash.othercountry || currentOtherCountry || saved.otherCountry || "",
+    otherCountry:      hash.othercountry || currentOtherCountry || saved.othercountry || saved.otherCountry || "",
     year:              hash.year     || saved.year     || manifest.defaultSelection.year,
     flow:              hash.flow     || saved.flow     || (manifest.defaultSelection.flow || "domestic"),
     metric:            FACTOR_TO_METRIC[hash.factor || saved.factor] || "CO2_total",
@@ -1204,23 +1247,19 @@ function writeHashState(state) {
   if (state.otherCountry) hashObj.othercountry = state.otherCountry;
   if (state.year !== defaults.year) hashObj.year = state.year;
   if (state.flow !== defaults.flow) hashObj.flow = state.flow;
-  hashObj.factor = METRIC_TO_FACTOR[state.metric] || state.metric;
+  if (state.metric !== "CO2_total") hashObj.factor = METRIC_TO_FACTOR[state.metric] || state.metric;
   if (state.currency !== defaults.currency) hashObj.currency = state.currency;
   if (state.industryLabelMode !== defaults.labels) hashObj.labels = state.industryLabelMode;
   if (state.topn !== defaults.inflows) hashObj.inflows = String(state.topn);
-  if (typeof goHash === "function") {
+  writeFilterCache(hashObj);
+  if (typeof updateHash === "function") {
+    const removeKeys = FILTER_HASH_KEYS.filter(function (key) {
+      return !Object.prototype.hasOwnProperty.call(hashObj, key);
+    });
+    updateHash(hashObj, true, removeKeys);
+  } else if (typeof goHash === "function") {
     goHash(hashObj);
   }
-  localStorage.setItem("sankey-state", JSON.stringify({
-    country: state.country,
-    otherCountry: state.otherCountry || "",
-    year: state.year,
-    flow: state.flow,
-    factor: METRIC_TO_FACTOR[state.metric] || state.metric,
-    currency: state.currency,
-    labels: state.industryLabelMode,
-    inflows: state.topn
-  }));
 }
 
 function syncCountryOptions() {
@@ -1852,17 +1891,8 @@ scoreHelpClose.addEventListener("click", function() {
   scoreHelpButton.removeAttribute("hidden");
 });
 
-const FILTER_HASH_KEYS = ["country", "othercountry", "year", "flow", "factor", "currency", "labels", "inflows"];
-
-function hashHasFilterKey() {
-  const hash = typeof getHash === "function" ? getHash() : {};
-  return FILTER_HASH_KEYS.some(function (key) {
-    return Object.prototype.hasOwnProperty.call(hash, key) && hash[key];
-  });
-}
-
 function clearAllFilters() {
-  localStorage.removeItem("sankey-state");
+  clearFilterCache();
   if (typeof updateHash === "function") {
     updateHash({}, true, FILTER_HASH_KEYS);
   }
@@ -1873,7 +1903,7 @@ document.getElementById("clear-filters-btn").addEventListener("click", clearAllF
 
 document.addEventListener("hashChangeEvent", function() {
   if (!hashHasFilterKey()) {
-    localStorage.removeItem("sankey-state");
+    clearFilterCache();
   }
   const selection = resolveSelection(readHashState());
   const selectionKey = [

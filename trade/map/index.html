@@ -20,8 +20,10 @@
         const localsiteBase = isFile
             ? (isLocalsiteProfileMirror ? "../../.." : "../../../localsite")
             : (servesLocalsiteAtRoot ? "/localsite" : "https://cdn.jsdelivr.net/gh/ModelEarth/localsite@main");
+        const stateMapUrl = "state.html";
 
         window.TRADE_MAP_LOCALSITE_BASE = localsiteBase;
+        window.TRADE_MAP_STATE_MAP_URL = stateMapUrl;
 
         document.write('<link type="text/css" rel="stylesheet" href="' + localsiteBase + '/css/base.css" />');
         document.write('<script type="text/javascript" src="' + localsiteBase + '/js/localsite.js?showheader=true&showsearch=true"><\/script>');
@@ -152,7 +154,9 @@
         #view-mode-select,
         #direction-select,
         #country-select,
-        #industry-select {
+        #industry-select,
+        #clear-filters-btn,
+        #state-map-link {
             min-width: 170px;
             max-width: 100%;
             padding: 6px 8px;
@@ -162,6 +166,24 @@
             color: #22314c;
             background: #fff;
             box-sizing: border-box;
+        }
+        #clear-filters-btn,
+        #state-map-link {
+            min-width: auto;
+            font-weight: 700;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        #clear-filters-btn:hover,
+        #state-map-link:hover {
+            background: #f1f5fb;
+            border-color: #94a3b8;
+        }
+        .dark #clear-filters-btn,
+        .dark #state-map-link {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border-color: #777;
         }
         #view-mode-select,
         #direction-select {
@@ -549,6 +571,8 @@
                         <option value="ALL">All exporting industries</option>
                     </select>
                 </label>
+                <a id="state-map-link" href="state.html" hidden>State map</a>
+                <button type="button" id="clear-filters-btn" title="Reset filters and clear stored selections">Clear</button>
             </div>
             <div id="industry-bar-note">Use By industry to isolate one exporting industry between countries. In that mode, color and arrowhead shape show direction, width shows quantity traded, and most lines stay solid for readability.</div>
         </div>
@@ -896,6 +920,20 @@ const DIM_OPACITY       = 0.08;
 const VALID_FLOW_DIRS = new Set(["imports", "exports", "balance"]);
 const VALID_INDUSTRY_MODES = new Set(["all", "industry"]);
 const VALID_INDUSTRY_FLOW_DIRS = new Set(["both", "imports", "exports"]);
+const FILTER_STORAGE_KEY = "trade-map-state";
+const MAP_FACTOR_TO_METRIC = { co2: "CO2_total", water: "Water_total", emp: "Employment_total", amt: "amount" };
+const MAP_METRIC_TO_FACTOR = { CO2_total: "co2", Water_total: "water", Employment_total: "emp", amount: "amt" };
+const FILTER_DEFAULTS = {
+    country: "US",
+    type: "imports",
+    factor: "amt",
+    currency: "EUR",
+    inflows: "15",
+    view: "all",
+    industry: ALL_INDUSTRY_VALUE,
+    industryflow: "both"
+};
+const FILTER_HASH_KEYS = Object.keys(FILTER_DEFAULTS);
 const COUNTRY_DIRECTION_OPTIONS = [
     { value: "imports", label: "Imports" },
     { value: "exports", label: "Exports" },
@@ -911,6 +949,103 @@ const INDUSTRY_DIRECTION_OPTIONS = [
 // Tooltip
 // ---------------------------------------------------------------------------
 const tooltip = document.getElementById("map-tooltip");
+const stateMapLink = document.getElementById("state-map-link");
+if (stateMapLink && window.TRADE_MAP_STATE_MAP_URL) {
+    stateMapLink.href = window.TRADE_MAP_STATE_MAP_URL;
+}
+
+function readFilterCache() {
+    try {
+        return JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) || "{}") || {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function writeFilterCache(filters) {
+    const cleaned = {};
+    FILTER_HASH_KEYS.forEach(function(key) {
+        const value = filters[key];
+        if (value !== undefined && value !== null && value !== "" && String(value) !== String(FILTER_DEFAULTS[key])) {
+            cleaned[key] = value;
+        }
+    });
+    if (Object.keys(cleaned).length) {
+        localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(cleaned));
+    } else {
+        localStorage.removeItem(FILTER_STORAGE_KEY);
+    }
+}
+
+function clearFilterCache() {
+    localStorage.removeItem(FILTER_STORAGE_KEY);
+    localStorage.removeItem("trade-currency");
+}
+
+function hashHasFilterKey(hash) {
+    const candidate = hash || (typeof getHash === "function" ? getHash() : {});
+    return FILTER_HASH_KEYS.some(function(key) {
+        return Object.prototype.hasOwnProperty.call(candidate, key) && candidate[key];
+    });
+}
+
+function readFilterState() {
+    const hash = typeof getHash === "function" ? getHash() : {};
+    const cache = hashHasFilterKey(hash) ? {} : readFilterCache();
+    const merged = {};
+    FILTER_HASH_KEYS.forEach(function(key) {
+        merged[key] = hash[key] || cache[key] || FILTER_DEFAULTS[key];
+    });
+    return merged;
+}
+
+function filteredHashObject(filters) {
+    const hashObj = {};
+    FILTER_HASH_KEYS.forEach(function(key) {
+        const value = filters[key];
+        if (value !== undefined && value !== null && value !== "" && String(value) !== String(FILTER_DEFAULTS[key])) {
+            hashObj[key] = String(value);
+        }
+    });
+    return hashObj;
+}
+
+function writeFilterState(filters) {
+    const hashObj = filteredHashObject(filters);
+    writeFilterCache(hashObj);
+    if (typeof updateHash === "function") {
+        const removeKeys = FILTER_HASH_KEYS.filter(function(key) {
+            return !Object.prototype.hasOwnProperty.call(hashObj, key);
+        });
+        updateHash(hashObj, true, removeKeys);
+    }
+}
+
+function currentFilterState(overrides) {
+    const sharedState = typeof TradeShared !== "undefined" && TradeShared.getState
+        ? TradeShared.getState()
+        : {};
+    const filters = {
+        country: typeof getSelectedCountryValue === "function" ? getSelectedCountryValue() : FILTER_DEFAULTS.country,
+        type: currentFlowDir || FILTER_DEFAULTS.type,
+        factor: sharedState.metric ? (MAP_METRIC_TO_FACTOR[sharedState.metric] || sharedState.metric) : FILTER_DEFAULTS.factor,
+        currency: sharedState.currency || FILTER_DEFAULTS.currency,
+        inflows: String(sharedState.topn || FILTER_DEFAULTS.inflows),
+        view: currentIndustryMode || FILTER_DEFAULTS.view,
+        industry: currentIndustryCode || FILTER_DEFAULTS.industry,
+        industryflow: currentIndustryFlowDir || FILTER_DEFAULTS.industryflow
+    };
+    return Object.assign(filters, overrides || {});
+}
+
+function persistFilterState(overrides) {
+    writeFilterState(currentFilterState(overrides));
+}
+
+function syncStateMapLink() {
+    if (!stateMapLink) return;
+    stateMapLink.hidden = normalizeCode(getSelectedCountryValue()) !== "US";
+}
 
 tooltip.addEventListener("mouseenter", function() {
     if (activeTooltipTrade) {
@@ -1151,21 +1286,21 @@ function getHashIndustryFlowDir() {
 }
 
 function syncIndustryModeToHash(mode) {
-    if (typeof updateHash === "function") {
-        updateHash({ view: VALID_INDUSTRY_MODES.has(mode) ? mode : "all" });
-    }
+    persistFilterState({
+        view: VALID_INDUSTRY_MODES.has(mode) ? mode : "all"
+    });
 }
 
 function syncIndustryCodeToHash(industryCode) {
-    if (typeof updateHash === "function") {
-        updateHash({ industry: normalizeCode(industryCode) || ALL_INDUSTRY_VALUE });
-    }
+    persistFilterState({
+        industry: normalizeCode(industryCode) || ALL_INDUSTRY_VALUE
+    });
 }
 
 function syncIndustryFlowDirToHash(flowDir) {
-    if (typeof updateHash === "function") {
-        updateHash({ industryflow: VALID_INDUSTRY_FLOW_DIRS.has(flowDir) ? flowDir : "both" });
-    }
+    persistFilterState({
+        industryflow: VALID_INDUSTRY_FLOW_DIRS.has(flowDir) ? flowDir : "both"
+    });
 }
 
 function sankeyFactorForMetric(metricKey) {
@@ -1552,6 +1687,7 @@ function setSelectedCountryValue(countryCode) {
     const hasOption = Array.from(select.options).some(option => option.value === countryCode);
     if (!hasOption) return false;
     select.value = countryCode;
+    syncStateMapLink();
     return true;
 }
 
@@ -1576,14 +1712,12 @@ function getHashFlowDir() {
 }
 
 function syncCountryToHash(countryCode) {
-    if (typeof updateHash === "function") {
-        updateHash({ country: countryCode });
-    }
+    persistFilterState({ country: countryCode });
 }
 
 function syncFlowDirToHash(flowDir) {
-    if (typeof updateHash === "function" && VALID_FLOW_DIRS.has(flowDir)) {
-        updateHash({ type: flowDir });
+    if (VALID_FLOW_DIRS.has(flowDir)) {
+        persistFilterState({ type: flowDir });
     }
 }
 
@@ -2229,8 +2363,47 @@ function loadFlows(focusCountry, flowDir) {
 // ---------------------------------------------------------------------------
 // Country selector + flow direction toggle
 // ---------------------------------------------------------------------------
+function resetSharedTradeControls() {
+    const factorSelect = document.getElementById("factor");
+    const currencySelect = document.getElementById("trade-currency-select");
+    const topnSlider = document.getElementById("trade-topn-slider");
+    const topnLabel = document.getElementById("trade-topn-label");
+
+    if (factorSelect) {
+        factorSelect.value = "amount";
+        factorSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    if (currencySelect) {
+        currencySelect.value = "EUR";
+        currencySelect.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    if (topnSlider) {
+        topnSlider.value = FILTER_DEFAULTS.inflows;
+        if (topnLabel) topnLabel.textContent = FILTER_DEFAULTS.inflows;
+        topnSlider.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+}
+
+function clearAllFilters() {
+    clearFilterCache();
+    if (typeof updateHash === "function") {
+        updateHash({}, true, FILTER_HASH_KEYS);
+    }
+    setIndustryModeState(FILTER_DEFAULTS.view);
+    setIndustrySelectionState(FILTER_DEFAULTS.industry);
+    setIndustryFlowState(FILTER_DEFAULTS.industryflow);
+    setFlowDirState(FILTER_DEFAULTS.type);
+    setSelectedCountryValue(FILTER_DEFAULTS.country);
+    resetSharedTradeControls();
+    writeFilterState(Object.assign({}, FILTER_DEFAULTS));
+    loadFlows(FILTER_DEFAULTS.country, FILTER_DEFAULTS.type);
+}
+
+document.getElementById("clear-filters-btn").addEventListener("click", clearAllFilters);
+
 document.getElementById("country-select").addEventListener("change", function() {
     syncCountryToHash(this.value);
+    syncStateMapLink();
     loadFlows(this.value, currentFlowDir);
 });
 
@@ -2239,11 +2412,6 @@ viewModeSelect.addEventListener("change", function() {
     syncIndustryModeToHash(currentIndustryMode);
     syncIndustryCodeToHash(currentIndustryCode);
     syncIndustryFlowDirToHash(currentIndustryFlowDir);
-    const saved = JSON.parse(localStorage.getItem("trade-map-state") || "{}");
-    saved.view = currentIndustryMode;
-    saved.industry = currentIndustryCode;
-    saved.industryflow = currentIndustryFlowDir;
-    localStorage.setItem("trade-map-state", JSON.stringify(saved));
     loadFlows(getSelectedCountryValue(), currentFlowDir);
 });
 
@@ -2252,11 +2420,6 @@ industrySelect.addEventListener("change", function() {
     syncIndustryModeToHash(currentIndustryMode);
     syncIndustryCodeToHash(currentIndustryCode);
     syncIndustryFlowDirToHash(currentIndustryFlowDir);
-    const saved = JSON.parse(localStorage.getItem("trade-map-state") || "{}");
-    saved.view = currentIndustryMode;
-    saved.industry = currentIndustryCode;
-    saved.industryflow = currentIndustryFlowDir;
-    localStorage.setItem("trade-map-state", JSON.stringify(saved));
     loadFlows(getSelectedCountryValue(), currentFlowDir);
 });
 
@@ -2266,11 +2429,6 @@ directionSelect.addEventListener("change", function() {
         syncIndustryModeToHash(currentIndustryMode);
         syncIndustryCodeToHash(currentIndustryCode);
         syncIndustryFlowDirToHash(currentIndustryFlowDir);
-        const saved = JSON.parse(localStorage.getItem("trade-map-state") || "{}");
-        saved.view = currentIndustryMode;
-        saved.industry = currentIndustryCode;
-        saved.industryflow = currentIndustryFlowDir;
-        localStorage.setItem("trade-map-state", JSON.stringify(saved));
     } else {
         setFlowDirState(this.value);
         syncFlowDirToHash(currentFlowDir);
@@ -2289,11 +2447,15 @@ map.on("resize", function() {
 
 document.addEventListener("hashChangeEvent", function() {
     const hash = getHash();
-    const nextCountry = getHashCountry() || getSelectedCountryValue();
-    const nextFlowDir = getHashFlowDir() || currentFlowDir;
-    const nextIndustryMode = getHashIndustryMode() || currentIndustryMode;
-    const nextIndustryCode = getHashIndustryCode() || currentIndustryCode;
-    const nextIndustryFlowDir = getHashIndustryFlowDir() || currentIndustryFlowDir;
+    if (!hashHasFilterKey(hash)) {
+        clearFilterCache();
+    }
+    const filters = readFilterState();
+    const nextCountry = getHashCountry() || filters.country || getSelectedCountryValue();
+    const nextFlowDir = getHashFlowDir() || filters.type || currentFlowDir;
+    const nextIndustryMode = getHashIndustryMode() || filters.view || currentIndustryMode;
+    const nextIndustryCode = getHashIndustryCode() || filters.industry || currentIndustryCode;
+    const nextIndustryFlowDir = getHashIndustryFlowDir() || filters.industryflow || currentIndustryFlowDir;
     const countryChanged = nextCountry !== currentFocusCountry;
     const flowChanged = nextFlowDir !== currentFlowDir;
     const industryModeChanged = nextIndustryMode !== currentIndustryMode;
@@ -2323,16 +2485,15 @@ document.addEventListener("hashChangeEvent", function() {
 TradePartner.initChart("partner-chart");
 
 // Initialize shared trade controls
-const _FACTOR_TO_METRIC = { co2: "CO2_total", water: "Water_total", emp: "Employment_total", amt: "amount" };
 const _initHash = typeof getHash === 'function' ? getHash() : {};
-const _initSaved = JSON.parse(localStorage.getItem('trade-map-state') || '{}');
-const _initCurrency = _initHash.currency || localStorage.getItem('trade-currency') || null;
+const _initSaved = readFilterState();
+const _initCurrency = _initHash.currency || _initSaved.currency || null;
 TradeShared.init({
     years: ["2022"],
     currencies: ["EUR"],
     initialState: {
         year: "2022",
-        metric: _FACTOR_TO_METRIC[_initHash.factor] || "amount",
+        metric: MAP_FACTOR_TO_METRIC[_initHash.factor || _initSaved.factor] || "amount",
         currency: _initCurrency,
         topn: parseInt(_initHash.inflows, 10) || parseInt(_initSaved.inflows, 10) || 15
     }
@@ -2360,25 +2521,12 @@ waitForElm('#trade-currency-select').then(function() {
 });
 
 // Reload map when shared state changes; sync currency to hash + localStorage
-const _METRIC_TO_FACTOR = { CO2_total: "co2", Water_total: "water", Employment_total: "emp", amount: "amt" };
 document.addEventListener("trade:change", function(evt) {
     const state = (evt && evt.detail) || TradeShared.getState();
-    if (typeof updateHash === 'function') {
-        updateHash({
-            currency: state.currency,
-            factor: _METRIC_TO_FACTOR[state.metric] || state.metric,
-            view: currentIndustryMode,
-            industry: currentIndustryCode,
-            industryflow: currentIndustryFlowDir,
-        });
-    }
-    localStorage.setItem('trade-currency', state.currency);
-    localStorage.setItem('trade-map-state', JSON.stringify({
-        factor: _METRIC_TO_FACTOR[state.metric] || state.metric,
-        inflows: state.topn,
-        view: currentIndustryMode,
-        industry: currentIndustryCode,
-        industryflow: currentIndustryFlowDir,
+    writeFilterState(currentFilterState({
+        factor: MAP_METRIC_TO_FACTOR[state.metric] || state.metric,
+        currency: state.currency || FILTER_DEFAULTS.currency,
+        inflows: String(state.topn || FILTER_DEFAULTS.inflows)
     }));
     loadFlows(currentFocusCountry, currentFlowDir);
 });
@@ -2387,8 +2535,8 @@ setIndustryModeState(getHashIndustryMode() || _initSaved.view || "all");
 setIndustrySelectionState(getHashIndustryCode() || _initSaved.industry || ALL_INDUSTRY_VALUE);
 setIndustryFlowState(getHashIndustryFlowDir() || _initSaved.industryflow || "both");
 
-const initialFlowDir = getHashFlowDir() || getSelectedFlowDirValue();
-const initialCountry = getHashCountry() || getSelectedCountryValue();
+const initialFlowDir = getHashFlowDir() || _initSaved.type || getSelectedFlowDirValue();
+const initialCountry = getHashCountry() || _initSaved.country || getSelectedCountryValue();
 if (!applySelections(initialCountry, initialFlowDir)) {
     applySelections(getSelectedCountryValue(), getSelectedFlowDirValue());
 }
