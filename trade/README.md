@@ -62,7 +62,7 @@ commodity\_factor
 
 Also see [Open CEDA](https://watershed.com/solutions/ceda)
 
-[Stanford's Cornerstone Sustainability Data Initiative](https://cornerstonedata.org) - Collaboration on USEEIO and Open CEDA, the worldâ€™s two most widely used models for Scope 3 (value chain) carbon accounting and policy research. [GitHub](https://github.com/cornerstone-data)
+[Stanford's Cornerstone Sustainability Data Initiative](https://cornerstonedata.org) - Collaboration on USEEIO and Open CEDA, the world's two most widely used models for Scope 3 (value chain) carbon accounting and policy research. [GitHub](https://github.com/cornerstone-data)
 
 
 ## Tables: sector, beasummary, sector_beasummary
@@ -92,13 +92,13 @@ See chart starter sample in upper right.
 In the CoLab, add the [Sector table output](https://github.com/ModelEarth/USEEIO/commit/c10d087d916477b3335127de560d4689fa5818ea) Ben created.
 -->
 
-**Exiobase Interactive Charts** â€” Three Charts using International Exiobase Data ([Issue #65](https://github.com/modelearth/projects/issues/65))
+**Exiobase Interactive Charts** – Three Charts using International Exiobase Data ([Issue #65](https://github.com/modelearth/projects/issues/65))
 
-- âœ… **Sankey (eCharts)** â€” [Live chart](../trade/map/sankey.html) Â· industry-to-industry embodied COâ‚‚, water, and employment flows for the World (WM) region, 2022 Â· [source](map/sankey.html)
+- ✅ **Sankey (eCharts)** – [Live chart](../trade/map/sankey.html) · industry-to-industry embodied CO₂, water, and employment flows for the World (WM) region, 2022 · [source](map/sankey.html)
 - ✅ **US State Sankey** — [Live chart](../../trade-data/state-dashboard/) · state-to-state domestic trade flow dashboard from BEA + Exiobase state files
 - ✅ **US State Trade Map** — [Live map](../../trade-data/state-trade-map/) · state-to-state trade links and partner rankings
-TO DO: **Trade Flow Map** (Leaflet/geographic) â€” needs real country-pair flow data (region1 â‰  region2)
-- ðŸ”² TO DO: **Chord Diagram** (D3) â€” needs bilateral region data; see existing D3 chord in [charts/d3/chord-diagram/](../charts/d3/chord-diagram/)
+TO DO: **Trade Flow Map** (Leaflet/geographic) – needs real country-pair flow data (region1 ≠ region2)
+- 📲 TO DO: **Chord Diagram** (D3) – needs bilateral region data; see existing D3 chord in [charts/d3/chord-diagram/](../charts/d3/chord-diagram/)
 
 See our various [Data Prep processes](/profile/prep/)
 
