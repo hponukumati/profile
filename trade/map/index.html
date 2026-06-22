@@ -1335,6 +1335,46 @@ function getSankeySelectionForTrade(trade) {
     };
 }
 
+// ---------------------------------------------------------------------------
+// Hover-to-Sankey: update the embedded Sankey as the user hovers a trade
+// arrow, instead of requiring a click. Debounced so moving the cursor across
+// several arrows doesn't fire a fetch per arrow.
+// ---------------------------------------------------------------------------
+let sankeyHoverTimer = null;
+const SANKEY_HOVER_DEBOUNCE_MS = 300;
+
+function scheduleSankeyHoverUpdate(trade) {
+    cancelSankeyHoverUpdate();
+    sankeyHoverTimer = setTimeout(function() {
+        applySankeyHoverSelection(trade);
+    }, SANKEY_HOVER_DEBOUNCE_MS);
+}
+
+function cancelSankeyHoverUpdate() {
+    if (sankeyHoverTimer) {
+        clearTimeout(sankeyHoverTimer);
+        sankeyHoverTimer = null;
+    }
+}
+
+function applySankeyHoverSelection(trade) {
+    if (typeof skLoadSelection !== "function") return;
+    const selection = getSankeySelectionForTrade(trade);
+    if (!selection) return;
+
+    const state = TradeShared.getState();
+    skLoadSelection({
+        country: selection.country,
+        otherCountry: selection.otherCountry,
+        year: state.year || "2022",
+        flow: selection.flow,
+        metric: state.metric || "amount",
+        currency: state.currency || "EUR",
+        industryLabelMode: "title",
+        topn: state.topn || 15
+    });
+}
+
 function buildSankeyLink(trade) {
     const selection = getSankeySelectionForTrade(trade);
     if (!selection) return "";
@@ -2018,6 +2058,7 @@ function renderArrows(trades, focusCountry, flowDir) {
                 map.getContainer().style.cursor = "pointer";
                 applyHighlight(trade.partner, { trade });
                 showTooltip(trade, focusCountry, flowDir, evt);
+                scheduleSankeyHoverUpdate(trade);
             })
             .on("mousemove", function(evt) {
                 moveTooltip(evt);
@@ -2030,6 +2071,7 @@ function renderArrows(trades, focusCountry, flowDir) {
                 }
                 hideTooltip();
                 selectedArrow ? applyHighlight(selectedArrow, { trade: selectedTrade }) : clearHighlight();
+                cancelSankeyHoverUpdate();
             })
             .on("click", function(evt) {
                 if (evt && typeof evt.stopPropagation === "function") {
