@@ -1521,6 +1521,15 @@ function hideTooltip() {
     activeTooltipTrade = null;
 }
 
+// Close the tooltip when the page scrolls so it doesn't stay stuck
+// floating over content it no longer points at.
+window.addEventListener("scroll", function() {
+    if (!activeTooltipTrade) return;
+    hideTooltip();
+    selectedArrow ? applyHighlight(selectedArrow, { trade: selectedTrade }) : clearHighlight();
+    cancelSankeyHoverUpdate();
+}, { passive: true });
+
 // ---------------------------------------------------------------------------
 // Highlight / clear
 // ---------------------------------------------------------------------------
