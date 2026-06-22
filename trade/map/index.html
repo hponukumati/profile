@@ -60,11 +60,12 @@
 
         #map {
             position: relative;
-            height: 100vh;
+            height: calc(100vh - var(--shared-controls-height));
             width: 100%;
         }
 
         :root {
+            --shared-controls-height: 0px;
             --imports-base: #2563eb;
             --exports-base: #dd6b20;
         }
@@ -106,6 +107,86 @@
             min-width: 200px;
             max-width: 280px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        }
+
+        /* Page config gear button + panel — pattern reused from model.earth/project's #showConfig */
+        #showConfig {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1003;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            border: 1px solid #ccc;
+            border-radius: 999px;
+            background: white;
+            color: #333;
+            font-size: 18px;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        }
+        #showConfig:hover,
+        #showConfig:focus-visible {
+            background: #f3f4f6;
+            outline: none;
+        }
+        #showConfig.active {
+            background: #e0e7ff;
+            border-color: #6366f1;
+        }
+        .page-config {
+            display: none;
+            position: absolute;
+            top: 56px;
+            right: 10px;
+            z-index: 1003;
+            min-width: 220px;
+            padding: 14px 16px;
+            border-radius: 12px;
+            background: white;
+            border: 1px solid rgba(19, 42, 43, 0.12);
+            box-shadow: 0 16px 32px rgba(16, 35, 39, 0.18);
+            color: #222;
+            font-size: 0.92rem;
+        }
+        .page-config.active { display: block; }
+        .page-config-top {
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        .layout-toggle-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .layout-toggle-btn:hover { background: #f3f4f6; }
+        .layout-toggle-btn[aria-pressed="true"] {
+            background: #e0e7ff;
+            border-color: #6366f1;
+        }
+
+        /* Margins layout mode — adds breathing room around the map only,
+           not the rest of the page (shared controls, charts, README). */
+        #map-wrapper.map-margins {
+            padding: 24px;
+            box-sizing: border-box;
+            background: #eef1f5;
+        }
+        #map-wrapper.map-margins #map {
+            height: calc(100vh - var(--shared-controls-height) - 48px);
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(15,23,42,0.18);
         }
         .industry-bar {
             position: absolute;
@@ -533,7 +614,7 @@
 </head>
 <body>
     <div id="trade-shared-controls" style="padding-left:16px"></div>
-    <div style="position:relative">
+    <div id="map-wrapper" style="position:relative">
         <div id="map">
             <div id="map-legend">
                 <span id="legend-metric">Arrow thickness = CO&#x2082; Emissions &middot; </span><span id="legend-dir">exporter &rarr; importer</span>
@@ -581,6 +662,16 @@
             <h4>Visible Partners</h4>
             <div id="status-msg">Loading&hellip;</div>
             <div id="source-filters"></div>
+        </div>
+
+        <button type="button" id="showConfig" aria-expanded="false" aria-controls="pageConfig" title="Page settings">&#9881;</button>
+        <div id="pageConfig" class="page-config" aria-label="Page configuration">
+            <div class="page-config-top">Page Config</div>
+            <div class="page-config-section">
+                <button type="button" id="marginsToggleBtn" class="layout-toggle-btn" aria-pressed="false">
+                    <span id="marginsToggleText">No Margins</span>
+                </button>
+            </div>
         </div>
 
         <div id="zoom-toast" aria-live="polite"></div>
@@ -1335,6 +1426,46 @@ function getSankeySelectionForTrade(trade) {
     };
 }
 
+// ---------------------------------------------------------------------------
+// Hover-to-Sankey: update the embedded Sankey as the user hovers a trade
+// arrow, instead of requiring a click. Debounced so moving the cursor across
+// several arrows doesn't fire a fetch per arrow.
+// ---------------------------------------------------------------------------
+let sankeyHoverTimer = null;
+const SANKEY_HOVER_DEBOUNCE_MS = 300;
+
+function scheduleSankeyHoverUpdate(trade) {
+    cancelSankeyHoverUpdate();
+    sankeyHoverTimer = setTimeout(function() {
+        applySankeyHoverSelection(trade);
+    }, SANKEY_HOVER_DEBOUNCE_MS);
+}
+
+function cancelSankeyHoverUpdate() {
+    if (sankeyHoverTimer) {
+        clearTimeout(sankeyHoverTimer);
+        sankeyHoverTimer = null;
+    }
+}
+
+function applySankeyHoverSelection(trade) {
+    if (typeof skLoadSelection !== "function") return;
+    const selection = getSankeySelectionForTrade(trade);
+    if (!selection) return;
+
+    const state = TradeShared.getState();
+    skLoadSelection({
+        country: selection.country,
+        otherCountry: selection.otherCountry,
+        year: state.year || "2022",
+        flow: selection.flow,
+        metric: state.metric || "amount",
+        currency: state.currency || "EUR",
+        industryLabelMode: "title",
+        topn: state.topn || 15
+    });
+}
+
 function buildSankeyLink(trade) {
     const selection = getSankeySelectionForTrade(trade);
     if (!selection) return "";
@@ -1480,6 +1611,15 @@ function hideTooltip() {
     tooltip.style.display = "none";
     activeTooltipTrade = null;
 }
+
+// Close the tooltip when the page scrolls so it doesn't stay stuck
+// floating over content it no longer points at.
+window.addEventListener("scroll", function() {
+    if (!activeTooltipTrade) return;
+    hideTooltip();
+    selectedArrow ? applyHighlight(selectedArrow, { trade: selectedTrade }) : clearHighlight();
+    cancelSankeyHoverUpdate();
+}, { passive: true });
 
 // ---------------------------------------------------------------------------
 // Highlight / clear
@@ -2018,6 +2158,7 @@ function renderArrows(trades, focusCountry, flowDir) {
                 map.getContainer().style.cursor = "pointer";
                 applyHighlight(trade.partner, { trade });
                 showTooltip(trade, focusCountry, flowDir, evt);
+                scheduleSankeyHoverUpdate(trade);
             })
             .on("mousemove", function(evt) {
                 moveTooltip(evt);
@@ -2030,6 +2171,7 @@ function renderArrows(trades, focusCountry, flowDir) {
                 }
                 hideTooltip();
                 selectedArrow ? applyHighlight(selectedArrow, { trade: selectedTrade }) : clearHighlight();
+                cancelSankeyHoverUpdate();
             })
             .on("click", function(evt) {
                 if (evt && typeof evt.stopPropagation === "function") {
@@ -2401,6 +2543,55 @@ function clearAllFilters() {
 
 document.getElementById("clear-filters-btn").addEventListener("click", clearAllFilters);
 
+// ---------------------------------------------------------------------------
+// Page config gear: toggle the settings panel, and a Margins / No Margins
+// layout setting persisted to localStorage.
+// ---------------------------------------------------------------------------
+(function setupPageConfig() {
+    const showConfig = document.getElementById("showConfig");
+    const pageConfig = document.getElementById("pageConfig");
+    const marginsToggleBtn = document.getElementById("marginsToggleBtn");
+    const marginsToggleText = document.getElementById("marginsToggleText");
+    if (!showConfig || !pageConfig || !marginsToggleBtn) return;
+
+    function setPanelOpen(isOpen) {
+        pageConfig.classList.toggle("active", isOpen);
+        showConfig.classList.toggle("active", isOpen);
+        showConfig.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    }
+
+    showConfig.addEventListener("click", function(evt) {
+        evt.stopPropagation();
+        setPanelOpen(!pageConfig.classList.contains("active"));
+    });
+
+    pageConfig.addEventListener("click", function(evt) {
+        evt.stopPropagation();
+    });
+
+    document.addEventListener("click", function() {
+        setPanelOpen(false);
+    });
+
+    function applyMargins(isOn) {
+        const mapWrapper = document.getElementById("map-wrapper");
+        if (mapWrapper) mapWrapper.classList.toggle("map-margins", isOn);
+        marginsToggleBtn.setAttribute("aria-pressed", isOn ? "true" : "false");
+        marginsToggleText.textContent = isOn ? "Margins" : "No Margins";
+    }
+
+    const savedMargins = localStorage.getItem("trade-map-margins") === "true";
+    applyMargins(savedMargins);
+
+    marginsToggleBtn.addEventListener("click", function(evt) {
+        evt.stopPropagation();
+        const nextOn = marginsToggleBtn.getAttribute("aria-pressed") !== "true";
+        applyMargins(nextOn);
+        localStorage.setItem("trade-map-margins", String(nextOn));
+        map.invalidateSize();
+    });
+})();
+
 document.getElementById("country-select").addEventListener("change", function() {
     syncCountryToHash(this.value);
     syncStateMapLink();
@@ -2499,6 +2690,24 @@ TradeShared.init({
     }
 });
 
+// The map's height fills the viewport minus the shared controls bar above
+// it, since that bar's height isn't fixed (it wraps on narrow screens and
+// gains a currency dropdown once that loads). Re-measure on resize and
+// whenever its content could have changed size.
+function syncMapHeightToControls() {
+    const controls = document.getElementById("trade-shared-controls");
+    if (!controls) return;
+    document.documentElement.style.setProperty("--shared-controls-height", controls.offsetHeight + "px");
+    // Defer invalidateSize to the next frame so the browser has applied the
+    // new CSS height first — calling it synchronously reads the stale size
+    // and leaves Leaflet's tile grid under-filled until the next zoom/pan.
+    requestAnimationFrame(function() {
+        if (map && typeof map.invalidateSize === "function") map.invalidateSize();
+    });
+}
+syncMapHeightToControls();
+window.addEventListener("resize", syncMapHeightToControls);
+
 // Load full currency list and rates once #trade-currency-select is in the DOM
 waitForElm('#trade-currency-select').then(function() {
     d3.csv('https://raw.githubusercontent.com/ModelEarth/trade-data/refs/heads/main/concordance/eur_annual_rates.csv')
@@ -2529,6 +2738,7 @@ document.addEventListener("trade:change", function(evt) {
         inflows: String(state.topn || FILTER_DEFAULTS.inflows)
     }));
     loadFlows(currentFocusCountry, currentFlowDir);
+    syncMapHeightToControls();
 });
 
 setIndustryModeState(getHashIndustryMode() || _initSaved.view || "all");
